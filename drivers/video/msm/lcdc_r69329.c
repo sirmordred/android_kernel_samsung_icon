@@ -166,7 +166,7 @@ static char initial_setting_seq5[7] = {
 
 static char initial_setting_seq6[10] = {
 	0xBD,
-	0xC1, 0x05, 0x00, 0x05, 0x00,
+	0xC0, 0x05, 0x00, 0x05, 0x00,
 	0x02, 0x00, 0x05, 0x03
 };
 
@@ -197,11 +197,12 @@ static char initial_setting_seq11[7] = {
 	0x8E
 };
 
-static char initial_setting_seq12[15] = {
+static char initial_setting_seq12[18] = {
 	0xD1,
 	0x0D, 0x11, 0x02, 0x22, 0x32,
 	0x03, 0x22, 0x32, 0x06, 0x77,
-	0x87, 0x05, 0x77, 0x87
+	0x87, 0x05, 0x77, 0x87, 0x00,
+	0x00, 0xDA
 };
 
 static char initial_setting_seq13[3] = {
@@ -274,7 +275,12 @@ static char disp_on_seq1[5] = {
 
 static char disp_on_seq2[6] = {
 	0xC1,
-	0x00, 0x83, 0x22, 0x11, 0x03
+	0x00, 0x83, 0x33, 0x11, 0x03
+};
+
+static char disp_on_seq3[2] = {
+	0xBD,
+	0xC1
 };
 
 static char set_negative[1] = {
@@ -353,7 +359,6 @@ static char set_cabc_off5[23] = {
 	0xFF, 0x10, 0xDF, 0xE7, 0xEF,
 	0xF7, 0xFF
 };
-
 static struct spi_cmd_desc display_on_cmds[] = {
 	{sizeof(sleep_out_seq), sleep_out_seq, 40},
 
@@ -387,11 +392,12 @@ static struct spi_cmd_desc display_on_cmds[] = {
 	{sizeof(disp_on_seq), disp_on_seq, 0},
 	{sizeof(disp_on_seq1), disp_on_seq1, 0},
 	{sizeof(disp_on_seq2), disp_on_seq2, 0},
+	{sizeof(disp_on_seq3), disp_on_seq3, 0},
 };
 
 static struct spi_cmd_desc display_off_cmds[] = {
-	{sizeof(disp_off_seq), disp_off_seq, 20},
-	{sizeof(sleep_in_seq), sleep_in_seq, 80},
+//	{sizeof(disp_off_seq), disp_off_seq, 1},
+	{sizeof(sleep_in_seq), sleep_in_seq, 100},
 };
 
 static char set_brightness_max[3] = {
@@ -735,10 +741,10 @@ static void r69329_set_backlight(int level)
 	else
 		spi_cmds_tx(backlight_off_cmd, ARRAY_SIZE(backlight_off_cmd));
 }
-
+extern void is_negate_mode_on(void);
 static int lcdc_r69329_panel_on(struct platform_device *pdev)
 {
-	static int bring_up_condition = 1;
+	static int bring_up_condition = 0;
 	/*unsigned size;*/
 	msleep(20);
 
@@ -789,16 +795,31 @@ static int lcdc_r69329_panel_on(struct platform_device *pdev)
 #endif
 		}
 	}
-
+	is_negate_mode_on();
 	return 0;
 }
+static unsigned int recovery_boot_mode;
+static int __init current_boot_mode(char *mode)
+{
+	/*
+	*	1 is recovery booting
+	*	0 is normal booting
+	*/
 
+	if (strncmp(mode, "1", 1) == 0)
+		recovery_boot_mode = 1;
+	else
+		recovery_boot_mode = 0;
+	pr_debug("%s %s", __func__, recovery_boot_mode == 1 ?
+						"recovery" : "normal");
+	return 1;
+}
+__setup("androidboot.boot_recovery=", current_boot_mode);
 static int lcdc_r69329_panel_off(struct platform_device *pdev)
 {
 	/*int i;*/
 
 	DPRINT("start %s\n", __func__);
-
 
 	if (r69329_state.disp_powered_up && r69329_state.display_on) {
 #ifdef ESD_RECOVERY
@@ -808,13 +829,14 @@ static int lcdc_r69329_panel_off(struct platform_device *pdev)
 		/*
 		* This part working for recovery mode only
 		*/
-		if (!lcd_prf) {
+		
+		if (!lcd_prf && recovery_boot_mode) {
 			DPRINT("%s : Panel off without backlight off\n",
 						__func__);
 			r69329_set_backlight(0xFF);
 			r69329_state.force_backlight_on = TRUE;
 		}
-
+	
 		spi_cmds_tx(display_off_cmds, ARRAY_SIZE(display_off_cmds));
 
 

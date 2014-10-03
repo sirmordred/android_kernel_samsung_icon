@@ -103,7 +103,7 @@ int gGLOWLIGHT_ISO200, gGLOWLIGHT_ISO400;
 
 static int accessibility_torch;
 static DECLARE_WAIT_QUEUE_HEAD(isx012_wait_queue);
-DECLARE_MUTEX(isx012_sem);
+//DECLARE_MUTEX(isx012_sem);
 
 /*
 #define ISX012_WRITE_LIST(A) \
@@ -336,11 +336,10 @@ static int isx012_i2c_burst_write_list
 	int iTxDataIndex = 0;
 	int retry_count = 5;
 	int err = 0;
-
-	printk(KERN_ERR "[%s:%d] - [%s]\n", __func__, __LINE__, name);
-
 	unsigned char buf[SONY_ISX012_BURST_DATA_LENGTH];
 	struct i2c_msg msg = {isx012_client->addr, 0, 4, buf};
+
+	printk(KERN_ERR "[%s:%d] - [%s]\n", __func__, __LINE__, name);
 
 	if (!isx012_client->adapter) {
 		printk(KERN_ERR "[%s:%d] can't search i2c client adapter\n",
@@ -685,7 +684,99 @@ static int isx012_write_regs_from_sd(char *name)
 }
 #endif
 
-static int isx012_get_LowLightCondition()
+void isx012_get_LuxValue(void)
+{
+	int err = -1;
+	unsigned short read_val = 0;
+
+	err = isx012_i2c_read(0x01A5, &read_val);
+	if (err < 0)
+		cam_err(" i2c read returned error, %d", err);
+
+	isx012_ctrl->lux = 0x00FF & read_val;
+	CAM_DEBUG(" Lux = %d", isx012_ctrl->lux);
+}
+
+void isx012_get_LowLightCondition_Normal(void)
+{
+	CAM_DEBUG("EV value is %d", isx012_ctrl->setting.brightness);
+
+	switch (isx012_ctrl->setting.brightness) {
+	case EV_MINUS_4:
+		CAM_DEBUG(" EV_M4");
+		if (isx012_ctrl->lux >= GLOWLIGHT_EV_M4)
+			gLowLight_check = 1;
+		else
+			gLowLight_check = 0;
+		break;
+
+	case EV_MINUS_3:
+		CAM_DEBUG(" EV_M3");
+		if (isx012_ctrl->lux >= GLOWLIGHT_EV_M3)
+			gLowLight_check = 1;
+		else
+			gLowLight_check = 0;
+		break;
+
+	case EV_MINUS_2:
+		CAM_DEBUG(" EV_M2");
+		if (isx012_ctrl->lux >= GLOWLIGHT_EV_M2)
+			gLowLight_check = 1;
+		else
+			gLowLight_check = 0;
+		break;
+
+	case EV_MINUS_1:
+		CAM_DEBUG(" EV_M1");
+		if (isx012_ctrl->lux >= GLOWLIGHT_EV_M1)
+			gLowLight_check = 1;
+		else
+			gLowLight_check = 0;
+		break;
+
+	case EV_PLUS_1:
+		CAM_DEBUG(" EV_P1");
+		if (isx012_ctrl->lux >= GLOWLIGHT_EV_P1)
+			gLowLight_check = 1;
+		else
+			gLowLight_check = 0;
+		break;
+
+	case EV_PLUS_2:
+		CAM_DEBUG(" EV_P2");
+		if (isx012_ctrl->lux >= GLOWLIGHT_EV_P2)
+			gLowLight_check = 1;
+		else
+			gLowLight_check = 0;
+		break;
+
+	case EV_PLUS_3:
+		CAM_DEBUG(" EV_P3");
+		if (isx012_ctrl->lux >= GLOWLIGHT_EV_P3)
+			gLowLight_check = 1;
+		else
+			gLowLight_check = 0;
+		break;
+
+	case EV_PLUS_4:
+		CAM_DEBUG(" EV_P4");
+		if (isx012_ctrl->lux >= GLOWLIGHT_EV_P4)
+			gLowLight_check = 1;
+		else
+			gLowLight_check = 0;
+		break;
+
+	default:
+		CAM_DEBUG(" default");
+		if (isx012_ctrl->lux >= GLOWLIGHT_DEFAULT)
+			gLowLight_check = 1;
+		else
+			gLowLight_check = 0;
+		break;
+	}
+}
+
+static int isx012_get_LowLightCondition(void)
 {
 	int err = -1;
 	unsigned char r_data2[2] = {0, 0};
@@ -693,30 +784,19 @@ static int isx012_get_LowLightCondition()
 	unsigned int LowLight_value = 0;
 	unsigned int ldata_temp = 0, hdata_temp = 0;
 
+	isx012_get_LuxValue();
+
 	if (isx012_ctrl->setting.iso == 0) {	/*auto iso*/
-		CAM_DEBUG("[%s:%d] auto iso %d\n",
-			__func__, __LINE__, isx012_ctrl->setting.iso);
-		err = isx012_i2c_read_multi(0x01A5, r_data2, 2);
-
-		if (err < 0)
-			CAM_DEBUG(
-			"[%s:%d] isx012_get_LowLightCondition() returned error, %d\n",
-			__func__, __LINE__, err);
-
-		LowLight_value = r_data2[0];
-		if (LowLight_value >= gGLOWLIGHT_DEFAULT)
-			gLowLight_check = 1;
-		else
-			gLowLight_check = 0;
+		isx012_get_LowLightCondition_Normal();
 	} else {	/*manual iso*/
 		CAM_DEBUG("[%s:%d] manual iso %d\n",
 			__func__, __LINE__, isx012_ctrl->setting.iso);
 		/*SHT_TIME_OUT_L*/
-		err = isx012_i2c_read_multi(0x019C, l_data, 2);
+		err = isx012_i2c_read_multi(0x019C, (unsigned short *)l_data, 2);
 		ldata_temp = (l_data[1] << 8 | l_data[0]);
 
 		/*SHT_TIME_OUT_H*/
-		err = isx012_i2c_read_multi(0x019E, h_data, 2);
+		err = isx012_i2c_read_multi(0x019E, (unsigned short *)h_data, 2);
 		hdata_temp =
 			(h_data[1] << 8 | h_data[0]);
 		LowLight_value =
@@ -1246,8 +1326,8 @@ static int isx012_exif_shutter_speed(void)
 
 	unsigned char l_data[2] = {0, 0}, h_data[2] = {0, 0};
 
-	err = isx012_i2c_read_multi(0x019C, l_data, 2);	/*SHT_TIME_OUT_L*/
-	err = isx012_i2c_read_multi(0x019E, h_data, 2);	/*SHT_TIME_OUT_H*/
+	err = isx012_i2c_read_multi(0x019C, (unsigned short *)l_data, 2);	/*SHT_TIME_OUT_L*/
+	err = isx012_i2c_read_multi(0x019E, (unsigned short *)h_data, 2);	/*SHT_TIME_OUT_H*/
 	shutter_speed =
 		(h_data[1] << 24 | h_data[0] << 16 |
 		l_data[1] << 8 | l_data[0]);
@@ -2772,7 +2852,7 @@ static int isx012_sensor_af_status(void)
 
 	/*CAM_DEBUG(" %s/%d\n", __func__, __LINE__);*/
 
-	err = isx012_i2c_read_multi(0x8B8A, r_data, 1);
+	err = isx012_i2c_read_multi(0x8B8A, (unsigned short *)r_data, 1);
 	/*CAM_DEBUG("%s:%d status(0x%x) r_data(0x%x %x)\n",
 	__func__, __LINE__, status, r_data[1], r_data[0]);*/
 	status = r_data[0];
@@ -3055,8 +3135,6 @@ static int isx012_get_af_status(void)
 
 static int isx012_set_touch_auto_focus(int value1)
 {
-	CAM_DEBUG("[%s:%d] value1[%d]\n", __func__, __LINE__, value1);
-
 	/*isx012_ctrl->status.touchaf++;*/
 
 	int x = isx012_ctrl->status.pos_x;
@@ -3075,6 +3153,7 @@ static int isx012_set_touch_auto_focus(int value1)
 	unsigned int AF_OPD4_HVALID = 259;
 	unsigned int AF_OPD4_VVALID = 324;
 
+	CAM_DEBUG("[%s:%d] value1[%d]\n", __func__, __LINE__, value1);
 
 	if (value1 == 0) {/* Stop touch AF*/
 		if (iscapture != 1) {
